@@ -1,2 +1,0 @@
-Part,Configuration,Quantity
-Part2,Default,4
