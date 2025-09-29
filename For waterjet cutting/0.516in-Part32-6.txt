@@ -1,0 +1,2 @@
+Part,Configuration,Quantity
+Part32,Default,6
