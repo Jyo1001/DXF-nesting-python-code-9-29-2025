@@ -820,31 +820,28 @@ def _get_part_candidate(part: 'Part', scale: int, angle: float, mirror: bool, sp
         w_units, h_units, loops = part.oriented(angle, mirror)
         raw, pw, ph = rasterize_loops(loops, scale)
         outer, _, _ = rasterize_outer_only(loops, scale)
-        base = outer if allow_holes else raw
+
+        base = raw if allow_holes else outer
+        occ_pad = dilate_mask(base, pw, ph, SAFETY_PX)
         spacing_px = int(math.ceil(spacing * scale)) if (enforce_gap and spacing > 0) else 0
-        pad_total = SAFETY_PX + spacing_px
-        base_padded, tw, th, pad_x, pad_y = pad_mask(base, pw, ph, pad_total)
-        raw_padded, _, _, _, _ = pad_mask(raw, pw, ph, pad_total)
-        enforce_r = SAFETY_PX + (spacing_px if enforce_gap else 0)
-        occ = dilate_mask(base_padded, tw, th, SAFETY_PX)
-        test = dilate_mask(base_padded, tw, th, enforce_r)
+        enforce_r = SAFETY_PX + spacing_px
+        test = dilate_mask(base, pw, ph, enforce_r)
         test_segments, _ = _mask_segments_and_fills(test)
-        raw_segments, raw_fills = _mask_segments_and_fills(raw_padded)
-        occ_segments, occ_fills = _mask_segments_and_fills(occ)
+        raw_segments, raw_fills = _mask_segments_and_fills(raw)
+        occ_segments, occ_fills = _mask_segments_and_fills(occ_pad)
+
         cand = {
             'loops': loops,
             'pw': pw,
             'ph': ph,
-            'tw': tw,
-            'th': th,
-            'pad_x': pad_x,
-            'pad_y': pad_y,
+
             'w_units': w_units,
             'h_units': h_units,
-            'raw': raw_padded,
+            'raw': raw,
             'raw_segments': raw_segments,
             'raw_fills': raw_fills,
-            'occ': occ,
+            'occ': occ_pad,
+
             'occ_segments': occ_segments,
             'occ_fills': occ_fills,
             'test': test,
@@ -1599,7 +1596,9 @@ def pack_bitmap_core(ordered_parts: List['Part'], W: float, H: float, spacing: f
                 check_ctrl()
                 occ_raw,occ_safe,outlist=ensure_sheet()
                 pos = (mask_ops.find_first_fit(occ_safe, tensors['test']) if mask_ops and tensors
-                       else bl_place(occ_safe, cand['test_segments'], cand['tw']))
+
+                       else bl_place(occ_safe, cand['test_segments'], cand['pw']))
+
                 if pos is not None:
                     xpx,ypx=pos
                     if mask_ops:
@@ -1608,7 +1607,9 @@ def pack_bitmap_core(ordered_parts: List['Part'], W: float, H: float, spacing: f
                     else:
                         or_mask_inplace(occ_raw, cand['raw_segments'], cand['raw_fills'], xpx, ypx)
                         or_mask_inplace(occ_safe,cand['occ_segments'], cand['occ_fills'], xpx, ypx)
-                    x_units=(xpx + cand['pad_x'])/scale; y_units=(ypx + cand['pad_y'])/scale
+
+                    x_units=xpx/scale; y_units=ypx/scale
+
                     loops_t=[[ (x+x_units,y+y_units) for (x,y) in lp ] for lp in cand['loops']]
                     outlist.append({'sheet':sheets_count,'loops':loops_t})
                     placed=True; placed_count+=1
@@ -1639,8 +1640,9 @@ def pack_bitmap_core(ordered_parts: List['Part'], W: float, H: float, spacing: f
             else:
                 or_mask_inplace(occ_raw,cand['raw_segments'],cand['raw_fills'],0,0)
                 or_mask_inplace(occ_safe,cand['occ_segments'],cand['occ_fills'],0,0)
-            x_units=(cand['pad_x'])/scale; y_units=(cand['pad_y'])/scale
-            loops_t=[[ (x+x_units,y+y_units) for (x,y) in lp ] for lp in cand['loops']]
+
+            loops_t=[[ (x,y) for (x,y) in lp ] for lp in cand['loops']]
+
             outlist.append({'sheet':sheets_count,'loops':loops_t})
             placed_count+=1
             if event_sink:
@@ -1857,18 +1859,22 @@ def pack_shelves(parts: List['Part'], W: float, H: float, spacing: float,
 
         placed=False
         for ang, mirror, cand in cand_opts:
-            if (cursor_x_px + cand['tw'] <= Wpx and
-                shelf_y_px + max(shelf_h_px, cand['th']) <= Hpx and
+
+            if (cursor_x_px + cand['pw'] + spacing_px <= Wpx and
+                shelf_y_px + max(shelf_h_px, cand['ph'] + spacing_px) <= Hpx and
                 fits(sheet, cand, cursor_x_px, shelf_y_px)):
-                x_units=(cursor_x_px + cand['pad_x'])/scale_eff; y_units=(shelf_y_px + cand['pad_y'])/scale_eff
+                x_units=cursor_x_px/scale_eff; y_units=shelf_y_px/scale_eff
+
                 loops_t=[[ (x+x_units,y+y_units) for x,y in lp ] for lp in cand['loops']]
                 placements.append({'sheet':sheet,'loops':loops_t})
                 if event_sink:
                     event_sink("place", {"sheet":sheet,"loops":loops_t,"part":os.path.basename(p.name),
                                           "placed":idx,"total":total})
                 commit(sheet, cand, cursor_x_px, shelf_y_px)
-                cursor_x_px += cand['tw']
-                shelf_h_px = max(shelf_h_px, cand['th'])
+
+                cursor_x_px += cand['pw'] + spacing_px
+                shelf_h_px = max(shelf_h_px, cand['ph'] + spacing_px)
+
                 placed=True
                 break
         if placed:
@@ -1878,18 +1884,22 @@ def pack_shelves(parts: List['Part'], W: float, H: float, spacing: float,
         cursor_x_px = 0
         shelf_h_px = 0
         for ang, mirror, cand in cand_opts:
-            if (cand['tw'] <= Wpx and
-                shelf_y_px + cand['th'] <= Hpx and
+
+            if (cand['pw'] + spacing_px <= Wpx and
+                shelf_y_px + cand['ph'] + spacing_px <= Hpx and
                 fits(sheet, cand, cursor_x_px, shelf_y_px)):
-                x_units=(cursor_x_px + cand['pad_x'])/scale_eff; y_units=(shelf_y_px + cand['pad_y'])/scale_eff
+                x_units=cursor_x_px/scale_eff; y_units=shelf_y_px/scale_eff
+
                 loops_t=[[ (x+x_units,y+y_units) for x,y in lp ] for lp in cand['loops']]
                 placements.append({'sheet':sheet,'loops':loops_t})
                 if event_sink:
                     event_sink("place", {"sheet":sheet,"loops":loops_t,"part":os.path.basename(p.name),
                                           "placed":idx,"total":total})
                 commit(sheet, cand, cursor_x_px, shelf_y_px)
-                cursor_x_px = cand['tw']
-                shelf_h_px = cand['th']
+
+                cursor_x_px = cand['pw'] + spacing_px
+                shelf_h_px = cand['ph'] + spacing_px
+
                 placed=True
                 break
         if placed:
@@ -1898,31 +1908,38 @@ def pack_shelves(parts: List['Part'], W: float, H: float, spacing: float,
         new_sheet()
         ok=False
         for ang, mirror, cand in cand_opts:
-            if (cand['tw'] <= Wpx and
-                cand['th'] <= Hpx and
+
+            if (cand['pw'] + spacing_px <= Wpx and
+                cand['ph'] + spacing_px <= Hpx and
                 fits(sheet, cand, 0, 0)):
-                x_units=(cand['pad_x'])/scale_eff; y_units=(cand['pad_y'])/scale_eff
+                x_units=0.0; y_units=0.0
+
                 loops_t=[[ (x+x_units,y+y_units) for x,y in lp ] for lp in cand['loops']]
                 placements.append({'sheet':sheet,'loops':loops_t})
                 if event_sink:
                     event_sink("place", {"sheet":sheet,"loops":loops_t,"part":os.path.basename(p.name),
                                           "placed":idx,"total":total})
                 commit(sheet, cand, 0, 0)
-                cursor_x_px = cand['tw']
-                shelf_h_px = cand['th']
+
+                cursor_x_px = cand['pw'] + spacing_px
+                shelf_h_px = cand['ph'] + spacing_px
+
                 ok=True
                 break
         if not ok:
             cand=_get_part_candidate(p, scale_eff, 0.0, False, spacing, ALLOW_NEST_IN_HOLES, ENFORCE_GAP)
             commit(sheet, cand, 0, 0)
-            x_units=(cand['pad_x'])/scale_eff; y_units=(cand['pad_y'])/scale_eff
-            loops_t=[[ (x+x_units,y+y_units) for x,y in lp ] for lp in cand['loops']]
+
+            loops_t=[[ (x,y) for x,y in lp ] for lp in cand['loops']]
+
             placements.append({'sheet':sheet,'loops':loops_t})
             if event_sink:
                 event_sink("place", {"sheet":sheet,"loops":loops_t,"part":os.path.basename(p.name),
                                       "placed":idx,"total":total})
-            cursor_x_px = cand['tw']
-            shelf_h_px = cand['th']
+
+            cursor_x_px = cand['pw'] + spacing_px
+            shelf_h_px = cand['ph'] + spacing_px
+
 
     sheets_used=(max((pl['sheet'] for pl in placements), default=-1))+1
     return placements, sheets_used
