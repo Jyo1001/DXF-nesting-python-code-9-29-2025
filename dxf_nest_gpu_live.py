@@ -55,7 +55,9 @@ SAFETY_PX = 2
 MIN_SPACING_PIXELS = 4
 
 # Gap enforcement (new)
+
 ENFORCE_GAP = True          # toggleable from the UI; controls whether the post-run validator executes
+
 
 # Live UI / server
 UI_FILENAME = "nest_viewer.html"
@@ -128,7 +130,9 @@ _UI_TOGGLE_DEFS = [
     ("group_by_thickness", "Group by thickness labels", "GROUP_BY_THICKNESS", "Nest files grouped by detected thickness."),
     ("split_sheets", "Split sheets into separate DXFs", "SPLIT_SHEETS", "Write one DXF per finished sheet."),
     ("merge_lines", "Merge touching lines", "MERGE_LINES", "Combine collinear edges for shared cutting."),
+
     ("enforce_gap", "Run gap validator", "ENFORCE_GAP", "Run the post-nesting gap validator after placement."),
+
 ]
 
 def _ui_toggle_snapshot():
@@ -292,7 +296,9 @@ class TorchMaskOps:
         k=test_mask_tensor.flip(0,1).unsqueeze(0).unsqueeze(0).to(torch.float32)
 
 
+
         heat=F.conv2d(x,k,stride=1); ok=(heat<=0.5)
+
 
 
         if not torch.any(ok): return None
@@ -754,7 +760,9 @@ class Part:
         self.obb_w,self.obb_h,self.obb_theta = min_area_rect(self.outer)
 
 
+
         self._cand_cache: Dict[Tuple[Any, ...], Dict[str,Any]] = {}
+
 
 
         self.uid = Part._uid_counter; Part._uid_counter += 1
@@ -796,6 +804,7 @@ class Part:
                 if key in seen: continue
                 seen.add(key); poses.append((ang, mirror))
         return poses
+
 
 
 
@@ -877,6 +886,7 @@ def _ensure_mask_tensors(cand: Dict[str, Any], mask_ops: Any) -> Dict[str, Any]:
 
 
 
+
 # ---------- Raster helpers ----------
 def _empty_mask(w:int, h:int): return [bytearray(w) for _ in range(h)]
 
@@ -902,6 +912,7 @@ def _mask_segments_and_fills(mask):
         fills.append(row_fills)
 
 
+
     return segments, fills
 
 def pad_mask(mask, w, h, pad):
@@ -919,6 +930,7 @@ def pad_mask(mask, w, h, pad):
 
 def rasterize_polygon_to_mask(mask, w, h, pts_scaled):
     if not pts_scaled: return
+
 
 
     ys=[p[1] for p in pts_scaled]
@@ -1532,6 +1544,7 @@ def start_http_server(folder:str, ui_filename:str, cuda_on:bool, control:NestCon
 # ---------- placement (with live events + pause/stop checks) ----------
 
 
+
 def bl_place(occ, mask_segments, tw):
     H=len(occ); W=len(occ[0]) if H>0 else 0
     ph=len(mask_segments)
@@ -1539,6 +1552,7 @@ def bl_place(occ, mask_segments, tw):
         return None
     max_y = H - ph + 1
     max_x = W - tw + 1
+
 
 
     for y in range(max_y):
@@ -1584,7 +1598,9 @@ def pack_bitmap_core(ordered_parts: List['Part'], W: float, H: float, spacing: f
                      event_sink: Optional[callable] = None):
 
 
+
     Wpx=max(1,int(math.ceil(W*scale))); Hpx=max(1,int(math.ceil(H*scale)))
+
 
 
     sheets_occ_raw=[]; sheets_occ_safe=[]; sheets_out=[]; sheets_count=0
@@ -1613,6 +1629,7 @@ def pack_bitmap_core(ordered_parts: List['Part'], W: float, H: float, spacing: f
         placed=False
 
 
+
         for ang,mirror in p.candidate_poses():
             check_ctrl()
             cand=_get_part_candidate(p, scale, ang, mirror, spacing, ALLOW_NEST_IN_HOLES, ENFORCE_GAP)
@@ -1638,6 +1655,7 @@ def pack_bitmap_core(ordered_parts: List['Part'], W: float, H: float, spacing: f
 
 
 
+
                     placed=True; placed_count+=1
                     if event_sink:
                         event_sink("place", {"sheet":sheets_count,"loops":loops_t,"part":os.path.basename(p.name),
@@ -1659,6 +1677,7 @@ def pack_bitmap_core(ordered_parts: List['Part'], W: float, H: float, spacing: f
             occ_raw,occ_safe,outlist=ensure_sheet()
 
 
+
             ang,mirror=0.0,False
             cand=_get_part_candidate(p, scale, ang, mirror, spacing, ALLOW_NEST_IN_HOLES, ENFORCE_GAP)
             tensors=_ensure_mask_tensors(cand, mask_ops) if mask_ops else None
@@ -1676,6 +1695,7 @@ def pack_bitmap_core(ordered_parts: List['Part'], W: float, H: float, spacing: f
             if event_sink:
                 event_sink("place", {"sheet":sheets_count,"loops":loops_t,
                                      "part":os.path.basename(p.name),"placed":placed_count,"total":total_parts})
+
 
 
             if progress:
@@ -1817,6 +1837,7 @@ def pack_bitmap_multi(parts: List['Part'], W: float, H: float, spacing: float, s
     return final_result[0], final_result[1]
 
 # ---------- Shelf fallback ----------
+
 
 
 def pack_shelves(parts: List['Part'], W: float, H: float, spacing: float,
@@ -1982,6 +2003,7 @@ def pack_shelves(parts: List['Part'], W: float, H: float, spacing: float,
 
 
 
+
 # ---------- Gap validator ----------
 def check_min_gap_violations(placements: List[dict], sheets_used: int, W: float, H: float, spacing: float, scale: int):
     """Returns total count of pixels that violate the spacing (approx), per-sheet counts, and first few sample coords."""
@@ -1989,7 +2011,9 @@ def check_min_gap_violations(placements: List[dict], sheets_used: int, W: float,
     Wpx=max(1,int(math.ceil(W*scale))); Hpx=max(1,int(math.ceil(H*scale)))
 
 
+
     r_val=max(0,int(math.ceil(spacing*scale)))
+
 
 
     per_sheet=[0 for _ in range(max(1,sheets_used))]
@@ -2143,6 +2167,7 @@ def main_live():
             hub.broadcast("sheet_opened", payload)
 
     # Wait for the UI to kick off the run
+
     start_config = control.wait_for_start()
     _apply_toggle_config(start_config)
     def _guard_shared_lines():
@@ -2152,6 +2177,7 @@ def main_live():
             MERGE_LINES = False
     _guard_shared_lines()
     applied_opts = _ui_toggle_snapshot()
+
     hub.broadcast("options_applied", {"options": applied_opts})
     for opt in applied_opts:
         log(f"[INFO] {opt['label']}: {'ON' if opt['value'] else 'OFF'}")
@@ -2232,9 +2258,11 @@ def main_live():
             try:
 
 
+
                 placements, sheets = pack_shelves(parts, W_eff, H_eff, SPACING,
                                                 control=control, event_sink=event_sink,
                                                 scale=eff_scale)
+
 
 
             except NestAbortPartial as nb:
@@ -2290,6 +2318,7 @@ def main_live():
     report_path = os.path.join(FOLDER, "nest_report.txt")
     _report_lines.insert(0,"=== Nesting Report ===")
     for out,sheets in outputs: _report_lines.append(f"Saved: {out}  | Sheets: {sheets}")
+
     _report_lines.append(f"Mode: {NEST_MODE}")
     _report_lines.append(f"Margin: {SHEET_MARGIN}")
     _report_lines.append(f"Spacing: {SPACING}")
@@ -2306,6 +2335,7 @@ def main_live():
     _report_lines.append(f"Allow mirror: {ALLOW_MIRROR}")
     _report_lines.append(f"Allow nest in holes: {ALLOW_NEST_IN_HOLES}")
     _report_lines.append(f"Gap validator enabled: {ENFORCE_GAP}")
+
     _report_lines.append(f"Thickness label units: {THICKNESS_LABEL_UNITS}")
     _report_lines.append(f"Split sheets: {SPLIT_SHEETS}")
     _report_lines.append(f"Merge common lines: {MERGE_LINES}")
